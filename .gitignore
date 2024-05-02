@@ -1,0 +1,12 @@
+gnu-efi
+tmp
+efiroot/*
+
+*.o
+*.d
+*.so
+*.log
+*.efi
+*.img
+
+.vscode
