@@ -1,6 +1,6 @@
 gnu-efi
 tmp
-efiroot/*
+efiroot
 
 *.o
 *.d
