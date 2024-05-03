@@ -1,3 +1,0 @@
-@echo -off
-echo Starting UEFI application...
-fs0:

@@ -2,14 +2,24 @@ CC = gcc -c
 LD = ld
 NAME = main
 
-GNU_EFI_DIR = gnu-efi
-TARGET_DIR = /boot/EFI/osdev
 CONFIG_DIR = /boot/loader/entries
-CONFIG_PRESET = example.conf
 OVMF_DIR = /usr/share/edk2-ovmf/x64
+GNU_EFI_DIR = gnu-efi
 TMP_DIR = tmp
+BUILD_DIR = build
 EFIROOT_DIR = efiroot
+TARGET_DIR = $(EFIROOT_DIR)/EFI/BOOT
+
+TARGET = $(TARGET_DIR)/BOOTX64.EFI
+CONFIG_PRESET = example.conf
 UEFI_SCRIPT = startup.nsh
+
+
+DIRS = 				\
+	$(TMP_DIR)		\
+	$(EFIROOT_DIR) 	\
+	$(BUILD_DIR)	\
+	$(TARGET_DIR)   \
 
 LIB =												\
 	-L$(GNU_EFI_DIR)/x86_64/lib						\
@@ -53,47 +63,41 @@ SRCS := \
 OBJS := $(patsubst %.c,%.o,$(SRCS))
 DEPS := $(patsubst %.c,%.d,$(SRCS))
 
-SO = $(NAME).so
-PE = $(NAME).efi
-PE_DEBUG = debug.efi
-IMG = $(NAME).img
-IMG_DEBUG = debug.img
+SO = $(BUILD_DIR)/$(NAME).so
+PE = $(BUILD_DIR)/$(NAME).efi
+PE_DEBUG = $(BUILD_DIR)/debug.efi
 
-DIRS = 				\
-	$(TMP_DIR)		\
-	$(EFIROOT_DIR) 	\
 
-TARGETS = 		 \
-	$(OBJS) 	 \
-	$(SO)		 \
-	$(PE)		 \
-	$(PE_DEBUG)	 \
-	$(IMG)		 \
-	$(IMG_DEBUG) \
+TARGETS = 		\
+	$(OBJS) 	\
+	$(SO)		\
+	$(PE)		\
+	$(PE_DEBUG)	\
+	$(TARGET)	\
 
 
 
-PE_SECTIONS = \
-	-j .text \
-	-j .sdata \
-	-j .data \
-	-j .rodata \
-	-j .dynamic \
-	-j .dynsym \
-	-j .rel \
-	-j .rela \
-	-j .rel.* \
-	-j .rela.* \
-	-j .reloc \
+PE_SECTIONS =	\
+	-j .text	\
+	-j .sdata	\
+	-j .data	\
+	-j .rodata	\
+	-j .dynamic	\
+	-j .dynsym	\
+	-j .rel		\
+	-j .rela	\
+	-j .rel.*	\
+	-j .rela.*	\
+	-j .reloc	\
 
-DEBUG_SECTIONS = \
-	-j .debug_info \
-	-j .debug_abbrev   \
-	-j .debug_loclists      \
-	-j .debug_aranges  \
-	-j .debug_line     \
-	-j .debug_line_str     \
-	-j .debug_str \
+DEBUG_SECTIONS =		\
+	-j .debug_info		\
+	-j .debug_abbrev	\
+	-j .debug_loclists	\
+	-j .debug_aranges  	\
+	-j .debug_line     	\
+	-j .debug_line_str  \
+	-j .debug_str 		\
 
 QEMU = qemu-system-x86_64
 
@@ -115,46 +119,20 @@ clean:
 
 new: clean all
 
-install: $(PE)
-	cp $< $(TARGET_DIR)/$<
-	cp $(CONFIG_PRESET) $(CONFIG_DIR)/
+install: $(PE) $(TARGET_DIR)
+	cp $< $(TARGET)
+
+install-debug: $(PE_DEBUG) $(TARGET_DIR)
+	cp $< $(TARGET)
 
 all-debug: $(PE_DEBUG)
 
-debug: $(PE_DEBUG) $(PE)
-	uefi-run -b $(OVMF_DIR)/OVMF.fd -q $(QEMU) $(PE) -- $(QEMU_FLAGS)\
+debug: install-debug $(PE)
+	$(QEMU) $(QEMU_FLAGS) -hdb fat:rw:$(EFIROOT_DIR)\
 	&gdb $(PE)
 
-run: $(IMG)
-	$(QEMU) $(QEMU_FLAGS) -drive if=ide,format=raw,file=$<
-
-$(IMG): $(PE)
-	rm -rf $(EFIROOT_DIR)/*
-	cp $^ $(EFIROOT_DIR)
-	cp $(UEFI_SCRIPT) $(EFIROOT_DIR)
-	echo $< >> $(EFIROOT_DIR)/$(UEFI_SCRIPT)
-	dd if=/dev/zero of=$(TMP_DIR)/$@ bs=512 count=91669
-	dd if=/dev/zero of=$@ bs=512 count=111669
-	parted $@ -s -a minimal mklabel gpt
-	parted $@ -s -a minimal mkpart EFI FAT16 2048s 93716s
-	parted $@ -s -a minimal toggle 1 boot
-	mformat -i $(TMP_DIR)/$@ -h 32 -t 32 -n 64 -c 1
-	mcopy -i $(TMP_DIR)/$@ $(EFIROOT_DIR)/* ::
-	dd if=$(TMP_DIR)/$@ of=$@ bs=512 count=91669 seek=2048 conv=notrunc
-
-$(IMG_DEBUG): $(PE_DEBUG)
-	rm -rf $(EFIROOT_DIR)/*
-	cp $^ $(EFIROOT_DIR)
-	cp $(UEFI_SCRIPT) $(EFIROOT_DIR)
-	echo $< >> $(EFIROOT_DIR)/$(UEFI_SCRIPT)
-	dd if=/dev/zero of=$(TMP_DIR)/$@ bs=512 count=91669
-	dd if=/dev/zero of=$@ bs=512 count=111669
-	parted $@ -s -a minimal mklabel gpt
-	parted $@ -s -a minimal mkpart EFI FAT16 2048s 93716s
-	parted $@ -s -a minimal toggle 1 boot
-	mformat -i $(TMP_DIR)/$@ -h 32 -t 32 -n 64 -c 1
-	mcopy -i $(TMP_DIR)/$@ $(EFIROOT_DIR)/* ::
-	dd if=$(TMP_DIR)/$@ of=$@ bs=512 count=91669 seek=2048 conv=notrunc
+run: install
+	$(QEMU) $(QEMU_FLAGS) -hdb fat:rw:$(EFIROOT_DIR)
 
 $(PE_DEBUG): $(SO)
 	objcopy $(PE_SECTIONS) $(DEBUG_SECTIONS) --target efi-app-x86_64 --subsystem=10 $^ $@
